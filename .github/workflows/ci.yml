@@ -1,0 +1,32 @@
+name: Go CI/CD Pipeline
+
+on: [push]
+
+jobs:
+  build-test-and-package:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 1. 下载代码
+        uses: actions/checkout@v4
+
+      - name: 2. 安装 Go 环境
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: 3. 运行 Go 代码规范检查 (Lint)
+        run: go vet ./...
+
+      - name: 4. 运行 Go 单元测试
+        run: go test ./...
+
+      # ====== 以下是新增的阶段 3：CD 持续交付环节 ======
+      - name: 5. 构建 Docker 镜像 (Build Image)
+        # -t 表示给镜像打标签。
+        # ${{ github.sha }} 是 GitHub 提供的变量，代表这次提交的唯一代码哈希值。
+        # 这是一个极其重要的最佳实践：每次打包的镜像都有唯一的版本号！
+        run: docker build -t my-go-app:${{ github.sha }} .
+        
+      - name: 6. 检查镜像是否构建成功
+        run: docker images
