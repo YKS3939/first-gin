@@ -2,6 +2,11 @@ name: Go CI/CD Pipeline
 
 on: [push]
 
+# 新增：赋予流水线向 GitHub Packages 写入镜像的权限
+permissions:
+  contents: read
+  packages: write 
+
 jobs:
   build-test-and-package:
     runs-on: ubuntu-latest
@@ -21,12 +26,31 @@ jobs:
       - name: 4. 运行 Go 单元测试
         run: go test ./...
 
-      # ====== 以下是新增的阶段 3：CD 持续交付环节 ======
-      - name: 5. 构建 Docker 镜像 (Build Image)
-        # -t 表示给镜像打标签。
-        # ${{ github.sha }} 是 GitHub 提供的变量，代表这次提交的唯一代码哈希值。
-        # 这是一个极其重要的最佳实践：每次打包的镜像都有唯一的版本号！
+      - name: 5. 构建 Docker 镜像
         run: docker build -t my-go-app:${{ github.sha }} .
-        
-      - name: 6. 检查镜像是否构建成功
-        run: docker images
+
+      # ====== 以下是新增的“推送入库”环节 ======
+      
+      - name: 6. 登录 GitHub 容器仓库 (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}          # 自动获取你的 GitHub 用户名
+          password: ${{ secrets.GITHUB_TOKEN }}  # GitHub 自动提供的安全令牌，免密登录！
+
+      - name: 7. 推送镜像到 GHCR
+        run: |
+          # 定义远程仓库的镜像名字 (注意：必须全部小写！)
+          # 格式为：ghcr.io/你的用户名/仓库名
+          # 假设你的 GitHub 用户名是 zhangsan，仓库叫 my-app
+          # 这里的名字就是 ghcr.io/zhangsan/my-app
+          IMAGE_ID=ghcr.io/${{ github.repository }}
+          IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]') # 确保转为小写
+          
+          # 给刚才打包的本地镜像打上远程仓库的标签
+          docker tag my-go-app:${{ github.sha }} $IMAGE_ID:${{ github.sha }}
+          docker tag my-go-app:${{ github.sha }} $IMAGE_ID:latest
+          
+          # 正式推送！(推一个带版本号的，推一个 latest 最新版的)
+          docker push $IMAGE_ID:${{ github.sha }}
+          docker push $IMAGE_ID:latest
